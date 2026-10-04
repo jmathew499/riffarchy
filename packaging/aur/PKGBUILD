@@ -1,0 +1,18 @@
+# Maintainer: Joson Mathew <josonmathew@chicagobooth.edu>
+pkgname=riffarchy
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Practice player for musicians: slow down, transpose and loop songs, including audio from YouTube"
+arch=('any')
+url="https://github.com/jmathew499/riffarchy"
+license=('MIT')
+depends=('python' 'python-gobject' 'python-cairo' 'gtk4' 'libadwaita>=1:1.8'
+         'mpv' 'ffmpeg' 'yt-dlp' 'deno')
+optdepends=('mpv-mpris: media keys and MPRIS control')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # TODO(step 3): replace with the checksum of the tagged GitHub tarball
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+}

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Riffarchy
+GenericName=Music Practice
+Comment=Slow down, loop and transpose songs — straight from YouTube
+Exec=riffarchy %F
+Icon=app.riffarchy.Riffarchy
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=riff;practice;slow;loop;tempo;pitch;transpose;youtube;guitar;
+MimeType=audio/mpeg;audio/mp4;audio/x-m4a;audio/ogg;audio/opus;audio/flac;audio/x-flac;audio/wav;audio/x-wav;audio/webm;
+StartupWMClass=app.riffarchy.Riffarchy
