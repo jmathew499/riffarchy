@@ -1770,7 +1770,102 @@ class MainWindow(QMainWindow):
         super().closeEvent(e)
 
 
+def selftest(out_dir):
+    """``Riffarchy --selftest <dir>``: headless end-to-end check of a (packaged) build.
+
+    Writes report.json and window.png to ``out_dir``; exit code 0 only if every check passed.
+    """
+    import array
+    import json
+    import tempfile
+    import time
+
+    os.environ.setdefault("RIFFARCHY_MPV_ARGS", "--ao=null")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="riffarchy-selftest-"))
+    report = {"version": VERSION, "platform": sys.platform, "frozen": bool(getattr(sys, "frozen", False)),
+              "tools": {t: paths.find_tool(t) for t in ("mpv", "ffmpeg", "ffprobe", "yt-dlp", "qjs")},
+              "bundled": {t: bool(paths.bundled_tool(t)) for t in ("mpv", "ffmpeg", "ffprobe", "yt-dlp", "qjs")},
+              "checks": {}}
+
+    def check(name, ok, detail=""):
+        report["checks"][name] = {"ok": bool(ok), "detail": str(detail)}
+        print(("PASS " if ok else "FAIL ") + name + (f"  ({detail})" if detail else ""), flush=True)
+
+    def run(*cmd, **kw):
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=120, **paths.POPEN_KW, **kw)
+
+    def tone_hz(path):
+        raw = subprocess.run([paths.find_tool("ffmpeg"), "-v", "error", "-i", str(path), "-ac", "1", "-ar", "48000",
+                              "-f", "s16le", "-"], capture_output=True, **paths.POPEN_KW).stdout
+        a = array.array("h", raw)[4800:-4800]
+        return sum(1 for i in range(1, len(a)) if (a[i - 1] < 0) != (a[i] < 0)) / 2 / max(1e-9, len(a) / 48000)
+
+    app = QApplication([sys.argv[0]])
+    theme.apply(app)
+    check("tools present", not paths.missing_tools(), paths.missing_tools() or "all found")
+    check("mpv has rubberband", "rubberband" in run(paths.find_tool("mpv"), "--no-config", "--af=help").stdout)
+    ytv = run(*youtube._yt_dlp("--version"))
+    check("yt-dlp runs", ytv.returncode == 0, ytv.stdout.strip() or ytv.stderr.strip()[-200:])
+    if paths.bundled_tool("qjs"):
+        q = run(paths.bundled_tool("qjs"), "-e", "print(6 * 7)")
+        check("QuickJS runs", q.stdout.strip() == "42", q.stdout.strip() or q.stderr.strip()[-200:])
+
+    tone = tmp / "tone.wav"
+    run(paths.find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i",
+        "sine=frequency=440:duration=20:sample_rate=48000", "-ac", "2", str(tone))
+    lib = Library(data_dir=tmp / "data", music_dir=tmp / "music")
+    win = MainWindow(app, lib)
+    win.resize(1280, 820)
+    win.show()
+    win.add_files([str(tone)])
+    s = win.s
+    state = {"t0": time.monotonic(), "phase": "load"}
+
+    def finish():
+        report["ok"] = all(c["ok"] for c in report["checks"].values())
+        win.grab().save(str(out_dir / "window.png"))
+        (out_dir / "report.json").write_text(json.dumps(report, indent=2))
+        win.close()
+        app.exit(0 if report["ok"] else 1)
+
+    def tick():
+        elapsed = time.monotonic() - state["t0"]
+        if state["phase"] == "load":
+            if s.song and s.peaks:
+                check("song loads with waveform", True, f"{s.duration:.1f}s, {len(s.peaks)} peaks")
+                s.set_loop(2.0, 3.0, on=True)
+                s.set_speed(75)
+                s.set_pitch(12, 0)
+                s.toggle_play()
+                state.update(phase="play", t0=time.monotonic())
+            elif elapsed > 20:
+                check("song loads with waveform", False, "timed out")
+                return finish()
+        elif state["phase"] == "play" and elapsed > 4:
+            p = s.current_pos()
+            check("plays and loops A-B", s.playing and s.loop_count >= 1 and 1.9 <= p <= 3.1,
+                  f"playing={s.playing} loops={s.loop_count} pos={p:.2f}")
+            s.toggle_play()
+            try:
+                out = media.export_audio(s.song, tmp / "loop.wav", (2.0, 3.0))
+                hz = tone_hz(out)
+                check("export applies pitch (+12 st → 880 Hz)", abs(hz - 880) < 20, f"{hz:.0f} Hz")
+            except Exception as e:  # noqa: BLE001
+                check("export applies pitch (+12 st → 880 Hz)", False, e)
+            return finish()
+        QTimer.singleShot(100, tick)
+
+    QTimer.singleShot(100, tick)
+    return app.exec()
+
+
 def main():
+    if "--selftest" in sys.argv:
+        i = sys.argv.index("--selftest")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        return selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest-report")
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)

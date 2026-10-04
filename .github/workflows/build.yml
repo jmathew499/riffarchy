@@ -1,0 +1,128 @@
+# Builds the macOS and Windows apps (Qt front end + bundled mpv/ffmpeg/yt-dlp/QuickJS),
+# tests them on real macOS and Windows machines, and on a v* tag drafts a GitHub release.
+# Builds are unsigned for now: see README "Installing unsigned builds".
+name: Build
+
+on:
+  push:
+    branches: [main, qt-frontend]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos-arm64, os: macos-14 }
+          - { name: windows-x64, os: windows-2022 }
+    defaults:
+      run:
+        shell: bash
+    env:
+      RIFFARCHY_MPV_ARGS: --ao=null   # runners have no audio device
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-qt.txt
+
+      - name: Python packages
+        run: python -m pip install -r requirements-qt.txt pytest pyinstaller pillow
+
+      - name: Cache tool downloads
+        uses: actions/cache@v6
+        with:
+          path: .cache/tools
+          key: tools-${{ matrix.name }}-${{ hashFiles('packaging/fetch_tools.py') }}
+
+      - name: Fetch bundled tools (pinned + checksummed)
+        run: python packaging/fetch_tools.py bin
+
+      - name: Tests against the bundled tools
+        env:
+          RIFFARCHY_BIN_DIR: ${{ github.workspace }}/bin
+        run: python -m pytest -v tests
+
+      - name: Build app
+        env:
+          RIFFARCHY_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: python packaging/build.py
+
+      - name: Self-test the packaged app
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then APP=dist/Riffarchy.app/Contents/MacOS/Riffarchy
+          else APP=dist/Riffarchy/Riffarchy.exe; fi
+          status=0; "$APP" --selftest selftest || status=$?
+          cat selftest/report.json || echo "no report written"
+          exit $status
+
+      - name: Upload app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Riffarchy-${{ matrix.name }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*-setup.exe
+          if-no-files-found: error
+
+      - name: Upload self-test report + screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: selftest-${{ matrix.name }}
+          path: selftest/
+          if-no-files-found: ignore
+
+  core-linux:
+    name: core tests (linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RIFFARCHY_MPV_ARGS: --ao=null
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: System tools
+        run: sudo apt-get update -q && sudo apt-get install -yq mpv ffmpeg
+      - run: python -m pip install pytest
+      - run: python -m pytest -v tests
+
+  release:
+    name: draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [app, core-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: Riffarchy-*
+          merge-multiple: true
+          path: dist
+      - name: Create draft pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+            --title "Riffarchy $GITHUB_REF_NAME" \
+            --notes "Unsigned macOS (Apple silicon) and Windows builds. See the README for how to open unsigned apps."

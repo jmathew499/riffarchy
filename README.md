@@ -23,14 +23,32 @@ or run:
 Requires `python-gobject`, `python-cairo`, `gtk4`, `libadwaita` ≥ 1.8, `mpv`, `ffmpeg`, `yt-dlp` and `deno`
 (`install.sh` installs any that are missing). `mpv-mpris` is optional and adds media-key support.
 
-### macOS and Windows (in progress)
-`riffarchy_qt.py` is a Qt version with the same features, for macOS and Windows (it also runs on Linux).
-Signed, packaged builds aren't out yet. To try it from source you need Python 3.10+ and `mpv`, `ffmpeg`
-and `yt-dlp` on your PATH:
+### macOS and Windows (beta, unsigned)
+`riffarchy_qt.py` is a Qt version with the same features. GitHub Actions builds it for **macOS (Apple
+silicon, macOS 14+)** and **Windows (x64)**, with mpv, FFmpeg, yt-dlp and QuickJS bundled, so there's
+nothing else to install. Beta builds come from the
+[Actions tab](https://github.com/jmathew499/riffarchy/actions) (and releases once tagged).
+
+#### Installing unsigned builds
+The builds aren't signed yet, so the OS will warn the first time:
+- **macOS:** open the `.dmg`, drag Riffarchy to Applications, then open it once. When macOS blocks it, go
+  to **System Settings → Privacy & Security** and click **Open Anyway**. If it still won't start, run
+  `xattr -dr com.apple.quarantine /Applications/Riffarchy.app` in Terminal.
+- **Windows:** run the installer (or unzip the portable version). If SmartScreen says *Windows protected
+  your PC*, click **More info → Run anyway**.
+
+#### Running from source
+You need Python 3.10+ and `mpv`, `ffmpeg` and `yt-dlp` on your PATH:
 
     python -m venv .venv
     .venv/bin/pip install -r requirements-qt.txt      # Windows: .venv\Scripts\pip
     .venv/bin/python riffarchy_qt.py
+
+#### Building and testing
+    python packaging/fetch_tools.py bin    # pinned, checksummed mpv/ffmpeg/yt-dlp/QuickJS for this OS
+    python -m pytest tests                 # add RIFFARCHY_BIN_DIR=bin to test against the bundled tools
+    python packaging/build.py              # → dist/*.dmg, *.zip, *-setup.exe
+    dist/Riffarchy.app/Contents/MacOS/Riffarchy --selftest report/   # headless end-to-end check
 
 ## Features
 - **YouTube**: Ctrl+Y opens a search box. Search for something or paste a link, then hit download.

@@ -60,8 +60,10 @@ def _bundle_dirs():
     if os.environ.get("RIFFARCHY_BIN_DIR"):
         dirs.append(Path(os.environ["RIFFARCHY_BIN_DIR"]))
     if getattr(sys, "frozen", False):  # PyInstaller and friends
-        dirs.append(Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "bin")
-        dirs.append(Path(sys.executable).parent / "bin")
+        exe_dir = Path(sys.executable).resolve().parent
+        dirs.append(exe_dir / "bin")                      # Windows/Linux: next to Riffarchy.exe
+        dirs.append(exe_dir.parent / "Resources" / "bin")  # macOS: Riffarchy.app/Contents/Resources/bin
+        dirs.append(Path(getattr(sys, "_MEIPASS", exe_dir)) / "bin")
     dirs.append(Path(__file__).resolve().parent.parent / "bin")
     return dirs
 
@@ -69,7 +71,14 @@ def _bundle_dirs():
 def bundled_tool(name):
     """Path to a copy of ``name`` shipped with the app, or None."""
     exe = name + ".exe" if IS_WINDOWS else name
-    return next((str(d / exe) for d in _bundle_dirs() if (d / exe).is_file()), None)
+    for d in _bundle_dirs():
+        candidates = [d / exe]
+        if IS_MAC and name == "mpv":  # mpv's official macOS build is an app bundle with its own dylibs
+            candidates.append(d / "mpv.app" / "Contents" / "MacOS" / "mpv")
+        for c in candidates:
+            if c.is_file():
+                return str(c)
+    return None
 
 
 def find_tool(name):

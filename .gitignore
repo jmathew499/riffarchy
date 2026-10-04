@@ -6,3 +6,7 @@ packaging/aur/pkg/
 packaging/aur/*.tar.gz
 *.pkg.tar.*
 .venv/
+.cache/
+bin/
+build/
+dist/
