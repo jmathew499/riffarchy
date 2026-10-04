@@ -95,18 +95,19 @@ def export_name(song, region=None, ext=".mp3"):
 def export_audio(song, out, region=None):
     """Render with speed and pitch applied. ``region`` is ``(a, b)`` seconds or None.
 
+    Uses mpv's encoder with the same rubberband filter as playback, so exports sound
+    like what you practised and no rubberband-enabled ffmpeg build is needed.
     Output format follows the file extension. Raises ``RuntimeError`` on failure.
     """
-    af = (f"rubberband=tempo={song['speed'] / 100:.4f}"
-          f":pitch={pitch_scale(song['semis'], song['cents']):.6f}:pitchq=quality")
-    cmd = [find_tool("ffmpeg"), "-y", "-v", "error"]
-    if region:  # trim on the input side so the cut happens before time-stretching
-        cmd += ["-ss", f"{region[0]:.3f}", "-to", f"{region[1]:.3f}"]
-    cmd += ["-i", song["path"], "-map", "0:a:0", "-af", af]
+    cmd = [find_tool("mpv"), "--no-config", "--no-terminal", "--no-video", "--msg-level=all=error",
+           f"--speed={song['speed'] / 100:.4f}",
+           f"--af=rubberband=pitch-scale={pitch_scale(song['semis'], song['cents']):.6f}:pitch=quality"]
+    if region:
+        cmd += [f"--start={region[0]:.3f}", f"--end={region[1]:.3f}"]
     if str(out).lower().endswith(".mp3"):
-        cmd += ["-c:a", "libmp3lame", "-q:a", "2"]
-    cmd.append(str(out))
+        cmd += ["--oac=libmp3lame", "--oacopts=b=192k"]  # mpv ignores "q"; 192k ≈ ffmpeg -q:a 2
+    cmd += [f"--o={out}", song["path"]]
     p = subprocess.run(cmd, capture_output=True, text=True, **POPEN_KW)
-    if p.returncode != 0:
-        raise RuntimeError(p.stderr.strip()[-200:] or "ffmpeg failed")
+    if p.returncode != 0 or not Path(out).is_file() or Path(out).stat().st_size == 0:
+        raise RuntimeError((p.stderr or p.stdout).strip()[-200:] or "mpv could not export this file")
     return out

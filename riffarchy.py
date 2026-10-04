@@ -9,8 +9,6 @@ and the Omarchy theme integration.
 
 import math
 import os
-import re
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -26,9 +24,9 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pang
 from riffcore import (APP_NAME, SPEED_MAX, SPEED_MIN, SPEED_PRESETS, VERSION, VOLUME_MAX,  # noqa: E402
                       Downloader, Library, Session, WaveView, fmt_time, run_async, song_subtitle)
 from riffcore import media, paths, youtube  # noqa: E402
+from riffcore.theme import OMARCHY_STATE as THEME_STATE, read_palette, wave_colors  # noqa: E402
 
 APP_ID = "app.riffarchy.Riffarchy"
-THEME_STATE = Path.home() / ".local/state/omarchy/current"
 
 
 def gtk_dispatch(fn, *args):
@@ -40,30 +38,6 @@ def gtk_dispatch(fn, *args):
 
 
 # ───────────────────────────── Omarchy theme ─────────────────────────────
-
-def hex_rgb(h, alpha=1.0):
-    h = h.lstrip("#")
-    return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255, alpha)
-
-
-def read_palette():
-    """Resolved Omarchy palette as {name: '#rrggbb'}, or {} outside Omarchy."""
-    pal = {}
-    try:
-        out = subprocess.run(["omarchy-theme-color", "--all"], capture_output=True, text=True, timeout=3).stdout
-        for line in out.splitlines():
-            k, _, v = line.partition("\t")
-            if v:
-                pal[k.strip()] = v.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    if not pal:
-        colors = THEME_STATE / "theme/colors.toml"
-        if colors.exists():
-            for k, v in re.findall(r'^\s*(\w+)\s*=\s*"(#[0-9a-fA-F]{6})"', colors.read_text(), re.M):
-                pal[k] = v
-    return pal
-
 
 def palette_css(p):
     if "accent" not in p or "background" not in p:
@@ -147,17 +121,7 @@ class Waveform(Gtk.DrawingArea):
         self.add_controller(motion)
 
     def set_palette(self, p):
-        pick = lambda *keys, d: next((p[k] for k in keys if k in p), d)  # noqa: E731
-        self.colors = {
-            "bg": hex_rgb(pick("darker_background", "dark_background", d="#141416")),
-            "wave": hex_rgb(pick("muted", "dark_foreground", "color8", d="#6f7b84")),
-            "played": hex_rgb(pick("accent", d="#3584e4")),
-            "loop": hex_rgb(pick("accent", d="#3584e4"), 0.16),
-            "loop_off": hex_rgb(pick("foreground", d="#ffffff"), 0.06),
-            "edge": hex_rgb(pick("accent", d="#3584e4")),
-            "head": hex_rgb(pick("bright_foreground", "foreground", d="#ffffff")),
-            "text": hex_rgb(pick("dark_foreground", "muted", d="#9a9a9a")),
-        }
+        self.colors = wave_colors(p)
         self.queue_draw()
 
     # model passthroughs
@@ -424,7 +388,7 @@ class YouTubeDialog(Adw.Dialog):
         if r["thumb_url"]:
             threading.Thread(target=self._fetch_thumb, args=(r["thumb_url"], pic), daemon=True).start()
 
-        if self.win.lib.find(yt=r["id"]):
+        if self.win.downloads.playable(r["id"]):
             row.add_suffix(Gtk.Label(label="In library", css_classes=["dim-label", "caption"]))
         elif self.win.downloads.job_for(r["id"]):
             row.add_suffix(Gtk.Label(label="Downloading…", css_classes=["dim-label", "caption"]))
@@ -1056,7 +1020,7 @@ class RiffWindow(Adw.ApplicationWindow):
         YouTubeDialog(self).present(self)
 
     def start_download(self, result):
-        existing = self.lib.find(yt=result.get("id"))
+        existing = self.downloads.playable(result.get("id"))
         if existing:
             self.toast("Already in your library")
             self.s.load(existing)

@@ -2,29 +2,28 @@
 
 mpv does decoding, output, A–B looping, and pitch/tempo via rubberband
 (``@rb`` filter label), so front ends never touch audio themselves.
+
+mpv must never outlive the app (a crash or kill would otherwise leave it running):
+on Linux/macOS it talks over an inherited socketpair (``--input-ipc-client``), and
+mpv quits by itself when our end closes; on Windows it is put in a kill-on-close job.
 """
 
 import json
 import os
+import shlex
 import subprocess
 import threading
 import time
-from pathlib import Path
 
-from .paths import IS_WINDOWS, POPEN_KW, find_tool, runtime_dir
+from .paths import IS_WINDOWS, POPEN_KW, find_tool
 from .util import VOLUME_MAX
 
 
-class _UnixTransport:
-    def __init__(self, path):
-        import socket
-        self.path = path
-        self.sock = socket.socket(socket.AF_UNIX)
-        try:
-            self.sock.connect(path)
-        except OSError:
-            self.sock.close()
-            raise
+class _SocketTransport:
+    """Our end of the socketpair whose other end mpv inherited."""
+
+    def __init__(self, sock):
+        self.sock = sock
 
     def send(self, data):
         self.sock.sendall(data)
@@ -37,7 +36,6 @@ class _UnixTransport:
             self.sock.close()
         except OSError:
             pass
-        Path(self.path).unlink(missing_ok=True)
 
 
 class _PipeTransport:
@@ -83,39 +81,90 @@ class _PipeTransport:
             pass
 
 
+def _kill_on_close_job(proc):
+    """Windows: put ``proc`` in a job object that kills it when our handle closes (i.e. when we exit).
+
+    Best effort — returns the job handle (keep it alive) or None if anything fails.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class BasicLimits(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in ("ReadOperationCount", "WriteOperationCount",
+                                                        "OtherOperationCount", "ReadTransferCount",
+                                                        "WriteTransferCount", "OtherTransferCount")]
+
+        class ExtendedLimits(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", BasicLimits), ("IoInfo", IoCounters),
+                        ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
+        k32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+        k32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+        job = k32.CreateJobObjectW(None, None)
+        info = ExtendedLimits()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = (job and k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))  # 9 = extended
+              and k32.AssignProcessToJobObject(job, int(proc._handle)))
+        return job if ok else None
+    except Exception:  # noqa: BLE001 — worst case mpv can outlive a crash, as before
+        return None
+
+
 class Mpv:
     OBSERVED = ("time-pos", "duration", "pause", "eof-reached")
 
     def __init__(self, on_prop, on_event, dispatch, volume=100, muted=False):
         """``on_prop(name, value)`` and ``on_event(name, msg)`` are delivered via ``dispatch``."""
         self.on_prop, self.on_event, self.dispatch = on_prop, on_event, dispatch
-        name = f"riffarchy-{os.getpid()}"
-        self.ipc_path = rf"\\.\pipe\{name}" if IS_WINDOWS else os.path.join(runtime_dir(), f"{name}.sock")
         args = [find_tool("mpv"), "--idle=yes", "--no-video", "--no-terminal", "--no-config", "--keep-open=yes",
                 "--hr-seek=yes", "--audio-display=no", f"--volume-max={VOLUME_MAX}",
-                f"--volume={volume}", f"--mute={'yes' if muted else 'no'}",
-                f"--input-ipc-server={self.ipc_path}", "--af=@rb:rubberband"]
+                f"--volume={volume}", f"--mute={'yes' if muted else 'no'}", "--af=@rb:rubberband"]
         for mpris in ("/usr/lib/mpv-mpris/mpris.so", "/etc/mpv/scripts/mpris.so"):  # media keys on Linux
             if os.path.exists(mpris):
                 args.append(f"--script={mpris}")
-        self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL, **POPEN_KW)
-        transport_cls = _PipeTransport if IS_WINDOWS else _UnixTransport
-        for _ in range(100):
-            try:
-                self.transport = transport_cls(self.ipc_path)
-                break
-            except OSError:
-                if self.proc.poll() is not None:
-                    raise RuntimeError("mpv exited during startup") from None
-                time.sleep(0.05)
+        # Extra options, e.g. RIFFARCHY_MPV_ARGS=--ao=null for headless tests and CI machines without audio
+        args += shlex.split(os.environ.get("RIFFARCHY_MPV_ARGS", ""))
+        quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        self._job = None
+        if IS_WINDOWS:
+            self.transport = self._start_windows(args, quiet)
         else:
-            self.proc.kill()
-            raise RuntimeError("could not connect to mpv")
+            import socket
+            ours, theirs = socket.socketpair()
+            args.append(f"--input-ipc-client=fd://{theirs.fileno()}")
+            self.proc = subprocess.Popen(args, pass_fds=(theirs.fileno(),), **quiet, **POPEN_KW)
+            theirs.close()  # only mpv holds that end now; when ours closes (even on a crash), mpv quits
+            self.transport = _SocketTransport(ours)
         self.lock = threading.Lock()
         threading.Thread(target=self._reader, daemon=True).start()
         for i, prop in enumerate(self.OBSERVED, 1):
             self.command("observe_property", i, prop)
+
+    def _start_windows(self, args, quiet):
+        path = rf"\\.\pipe\riffarchy-{os.getpid()}"
+        self.proc = subprocess.Popen(args + [f"--input-ipc-server={path}"], **quiet, **POPEN_KW)
+        self._job = _kill_on_close_job(self.proc)
+        for _ in range(100):
+            try:
+                return _PipeTransport(path)
+            except OSError:
+                if self.proc.poll() is not None:
+                    raise RuntimeError("mpv exited during startup") from None
+                time.sleep(0.05)
+        self.proc.kill()
+        raise RuntimeError("could not connect to mpv")
 
     def command(self, *args):
         msg = (json.dumps({"command": list(args)}) + "\n").encode()

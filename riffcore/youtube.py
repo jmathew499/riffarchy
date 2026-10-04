@@ -19,6 +19,35 @@ class YouTubeError(Exception):
     pass
 
 
+def _yt_dlp(*args):
+    """yt-dlp command line, pointed at any bundled ffmpeg / QuickJS."""
+    cmd = [find_tool("yt-dlp")]
+    if bundled_tool("ffmpeg"):  # packaged builds: point yt-dlp at our ffmpeg
+        cmd += ["--ffmpeg-location", bundled_tool("ffmpeg")]
+    if bundled_tool("qjs"):  # packaged builds ship QuickJS (2.6 MB) instead of deno (110 MB)
+        cmd += ["--no-js-runtimes", "--js-runtimes", f"quickjs:{bundled_tool('qjs')}"]
+    return cmd + list(args)
+
+
+def can_self_update():
+    """Only a bundled standalone yt-dlp can update itself; system copies belong to the package manager."""
+    return bundled_tool("yt-dlp") is not None
+
+
+def self_update():
+    """Run ``yt-dlp -U`` on the bundled copy. Returns its last output line; raises ``YouTubeError``."""
+    if not can_self_update():
+        raise YouTubeError("yt-dlp is managed by your system package manager")
+    try:
+        p = subprocess.run(_yt_dlp("-U"), capture_output=True, text=True, timeout=180, **POPEN_KW)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise YouTubeError(str(e)) from e
+    lines = (p.stdout + p.stderr).strip().splitlines() or ["yt-dlp update finished"]
+    if p.returncode != 0:
+        raise YouTubeError(lines[-1].removeprefix("ERROR: "))
+    return lines[-1]
+
+
 def is_url(text):
     return bool(re.match(r"^(https?://|www\.|youtu)", text.strip()))
 
@@ -31,7 +60,7 @@ def search(query, limit=20):
     q = query.strip()
     target = q if is_url(q) else f"ytsearch{limit}:{q}"
     try:
-        p = subprocess.run([find_tool("yt-dlp"), "-J", "--flat-playlist", "--no-warnings", target],
+        p = subprocess.run(_yt_dlp("-J", "--flat-playlist", "--no-warnings", target),
                            capture_output=True, text=True, timeout=90, **POPEN_KW)
     except (OSError, subprocess.SubprocessError) as e:
         raise YouTubeError(str(e)) from e
@@ -71,16 +100,14 @@ def download(url, music_dir, thumbs_dir, on_progress=None):
     report = on_progress or (lambda frac, status: None)
     result, errors = None, []
     for fmt in YT_FORMATS:
-        cmd = [find_tool("yt-dlp"), "--no-playlist", "-f", fmt, "-x", "--audio-quality", "0", "--embed-metadata",
+        cmd = _yt_dlp("--no-playlist", "-f", fmt, "-x", "--audio-quality", "0", "--embed-metadata",
                "--write-thumbnail", "--convert-thumbnails", "jpg", "--no-warnings",
                "-P", str(music_dir), "-P", f"thumbnail:{thumbs_dir}",
                "-o", "%(title).120B [%(id)s].%(ext)s", "-o", "thumbnail:%(id)s.%(ext)s",
                "--newline", "--progress", "--progress-template",
                "download:RIFFPROG %(progress._percent_str)s|%(progress._eta_str)s",
                "--print", "after_move:RIFFJSON %(.{id,title,channel,uploader,duration,filepath,webpage_url})j",
-               url]
-        if bundled_tool("ffmpeg"):  # packaged builds: point yt-dlp at our ffmpeg
-            cmd[-1:-1] = ["--ffmpeg-location", bundled_tool("ffmpeg")]
+               url)
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                     encoding="utf-8", errors="replace", **POPEN_KW)

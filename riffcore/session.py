@@ -417,13 +417,21 @@ class Downloader:
     def job_for(self, yt):
         return next((j for j in self.jobs if j["yt"] == yt), None)
 
+    def playable(self, yt):
+        """The library song for this video, if its audio file is still on disk."""
+        song = self.lib.find(yt=yt)
+        return song if song and os.path.exists(song["path"]) else None
+
     def start(self, result):
         """Start downloading a ``youtube.search`` result. Returns the job, or None if
-        the video is already in the library or already downloading."""
-        if self.lib.find(yt=result.get("id")) or self.job_for(result.get("id")):
+        the video is already playable from the library or already downloading.
+
+        If the library has the video but its file was deleted, the download repairs
+        that entry in place, keeping its loops, sections and speed/pitch settings."""
+        if self.playable(result.get("id")) or self.job_for(result.get("id")):
             return None
         job = {"yt": result.get("id"), "title": result.get("title") or result["url"], "progress": 0.0,
-               "status": "Starting…"}
+               "status": "Starting…", "replace": self.lib.find(yt=result.get("id"))}
         self.jobs.append(job)
         threading.Thread(target=self._run, args=(job, result["url"]), daemon=True).start()
         return job
@@ -444,5 +452,13 @@ class Downloader:
 
     def _finish(self, job, res, err):
         self.jobs.remove(job)
-        song = self.lib.add_download(res, job["title"]) if res else None
+        song = None
+        if res and job["replace"] in self.lib.songs:
+            song = job["replace"]
+            song.update(path=res["filepath"], thumb=res.get("thumb") or song.get("thumb"),
+                        duration=res.get("duration") or song.get("duration"))
+            (self.lib.peaks_dir / f"{song['id']}.bin").unlink(missing_ok=True)  # waveform of the new file
+            self.lib.save()
+        elif res:
+            song = self.lib.add_download(res, job["title"])
         self.on_done(job, song, err)
