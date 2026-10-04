@@ -10,7 +10,7 @@ depends=('python' 'python-gobject' 'python-cairo' 'gtk4' 'libadwaita>=1:1.8'
          'mpv' 'ffmpeg' 'yt-dlp' 'deno')
 optdepends=('mpv-mpris: media keys and MPRIS control')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')  # TODO(step 3): replace with the checksum of the tagged GitHub tarball
+sha256sums=('f2ca622ccf7a7421b15688fbf3c0a8213d693eb057dcbf78cc330d5e2d7725de')
 
 package() {
   cd "$pkgname-$pkgver"

@@ -1,0 +1,21 @@
+pkgbase = riffarchy
+	pkgdesc = Practice player for musicians: slow down, transpose and loop songs, including audio from YouTube
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/jmathew499/riffarchy
+	arch = any
+	license = MIT
+	depends = python
+	depends = python-gobject
+	depends = python-cairo
+	depends = gtk4
+	depends = libadwaita>=1:1.8
+	depends = mpv
+	depends = ffmpeg
+	depends = yt-dlp
+	depends = deno
+	optdepends = mpv-mpris: media keys and MPRIS control
+	source = riffarchy-1.0.0.tar.gz::https://github.com/jmathew499/riffarchy/archive/refs/tags/v1.0.0.tar.gz
+	sha256sums = f2ca622ccf7a7421b15688fbf3c0a8213d693eb057dcbf78cc330d5e2d7725de
+
+pkgname = riffarchy
