@@ -1,0 +1,2 @@
+# Qt front end (macOS / Windows / Linux). The GTK app needs no pip packages.
+PySide6-Essentials==6.11.2
