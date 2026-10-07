@@ -29,13 +29,10 @@ silicon, macOS 14+)** and **Windows (x64)**, with mpv, FFmpeg, yt-dlp and QuickJ
 nothing else to install. Beta builds come from the
 [Actions tab](https://github.com/jmathew499/riffarchy/actions) (and releases once tagged).
 
-#### Installing unsigned builds
-The builds aren't signed yet, so the OS will warn the first time:
-- **macOS:** open the `.dmg`, drag Riffarchy to Applications, then open it once. When macOS blocks it, go
-  to **System Settings → Privacy & Security** and click **Open Anyway**. If it still won't start, run
-  `xattr -dr com.apple.quarantine /Applications/Riffarchy.app` in Terminal.
-- **Windows:** run the installer (or unzip the portable version). If SmartScreen says *Windows protected
-  your PC*, click **More info → Run anyway**.
+#### Installing
+Step-by-step guides, including how to open the app the first time while it's unsigned:
+- **[macOS install guide](docs/install-macos.md)**: Apple silicon, macOS 14+
+- **[Windows install guide](docs/install-windows.md)**: Windows 10/11, 64-bit
 
 #### Running from source
 You need Python 3.10+ and `mpv`, `ffmpeg` and `yt-dlp` on your PATH:
