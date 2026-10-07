@@ -7,7 +7,8 @@ checksums) in `packaging/fetch_tools.py`.
 
 | Component | Version | Licence | Source |
 |---|---|---|---|
-| [mpv](https://mpv.io) (official build, includes Rubber Band and FFmpeg libraries) | 0.41.0 | GPL-2.0-or-later | https://github.com/mpv-player/mpv/tree/v0.41.0 |
+| [mpv](https://mpv.io), macOS: official build (includes Rubber Band and FFmpeg libraries) | 0.41.0 | GPL-2.0-or-later | https://github.com/mpv-player/mpv/tree/v0.41.0 |
+| [mpv](https://mpv.io), Windows: [shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake) build (the official one lacks Rubber Band) | git 413ff0b1cd (2026-10-04) | GPL-2.0-or-later | https://github.com/mpv-player/mpv/commit/413ff0b1cd, build scripts: https://github.com/shinchiro/mpv-winbuild-cmake |
 | [FFmpeg](https://ffmpeg.org) `ffmpeg` and `ffprobe` (static builds by eugeneware/ffmpeg-static) | 6.1.1 | GPL-3.0-or-later | https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz, build scripts: https://github.com/eugeneware/ffmpeg-static/tree/b6.1.1 |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) (standalone build) | 2026.08.19 | Unlicense (bundled dependencies: see yt-dlp's THIRD_PARTY_LICENSES.txt) | https://github.com/yt-dlp/yt-dlp/tree/2026.08.19 |
 | [QuickJS-ng](https://github.com/quickjs-ng/quickjs) `qjs` | 0.17.0 | MIT | https://github.com/quickjs-ng/quickjs/tree/v0.17.0 |
