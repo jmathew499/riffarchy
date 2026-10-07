@@ -102,7 +102,7 @@ def unpack(kind, data, bin_dir):
         shutil.rmtree(bin_dir / "mpv.app", ignore_errors=True)
         with tarfile.open(fileobj=io.BytesIO(inner)) as tar:
             tar.extractall(bin_dir, filter="tar")
-    elif kind == "mpv-windows-7z":  # just mpv.exe and the DLL it loads from the top of the archive
+    elif kind == "mpv-windows-7z":  # mpv.exe, its console wrapper mpv.com, and the DLL it loads
         # The archive uses the BCJ2 filter, which py7zr can't decode: use 7-Zip, or libarchive's bsdtar
         # (built into Windows as System32\\tar.exe — not Git Bash's GNU tar, which can't read .7z).
         seven = shutil.which("7z") or next((str(p) for p in (Path(os.environ.get("ProgramFiles", "")) /
@@ -120,7 +120,7 @@ def unpack(kind, data, bin_dir):
             else:
                 raise SystemExit("need 7-Zip or bsdtar to unpack the Windows mpv build")
             for f in out.iterdir():
-                if f.is_file() and f.suffix.lower() in (".exe", ".dll"):
+                if f.is_file() and f.suffix.lower() in (".exe", ".com", ".dll"):
                     shutil.copy2(f, bin_dir / f.name)
     else:
         raise ValueError(kind)

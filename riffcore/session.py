@@ -40,6 +40,7 @@ class Session:
         self.duration = 0.0
         self.last_raw = 0.0
         self.seek_guard = 0.0
+        self.wrap_t = 0.0  # when the A–B loop last jumped back to A
         self.loop_count = 0
         self.trainer_on = False
         self.mpv = Mpv(self._on_prop, self._on_event, dispatch,
@@ -111,6 +112,7 @@ class Session:
             lp = self.song and self.song["loop"]
             if (lp and lp["on"] and lp["a"] is not None and self.playing and now > self.seek_guard
                     and data < self.last_raw - 0.25 and abs(data - lp["a"]) < 0.6):
+                self.wrap_t = now
                 self._on_loop_wrap()
             self.last_raw = data
             self.pos, self.pos_t = data, now
@@ -149,6 +151,10 @@ class Session:
             lp = self.song["loop"]
             if lp["on"] and lp["b"] is not None and self.pos <= lp["b"]:
                 p = min(p, lp["b"])
+            # Just after a loop jump mpv reports positions up to ~0.25 s early (rubberband latency);
+            # don't let the playhead flick to the left of A.
+            if lp["on"] and lp["a"] is not None and time.monotonic() - self.wrap_t < 1.0:
+                p = max(p, lp["a"])
         return min(p, self.duration) if self.duration else p
 
     def toggle_play(self):

@@ -73,6 +73,8 @@ def bundled_tool(name):
     exe = name + ".exe" if IS_WINDOWS else name
     for d in _bundle_dirs():
         candidates = [d / exe]
+        if IS_WINDOWS and name == "mpv":  # mpv.exe is a GUI program: no stdout/exit status; mpv.com is
+            candidates.insert(0, d / "mpv.com")  # its console wrapper, which subprocesses can talk to
         if IS_MAC and name == "mpv":  # mpv's official macOS build is an app bundle with its own dylibs
             candidates.append(d / "mpv.app" / "Contents" / "MacOS" / "mpv")
         for c in candidates:

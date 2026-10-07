@@ -12,8 +12,10 @@ import json
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
+from pathlib import Path
 
 from .paths import IS_WINDOWS, POPEN_KW, find_tool
 from .util import VOLUME_MAX
@@ -136,6 +138,9 @@ class Mpv:
                 args.append(f"--script={mpris}")
         # Extra options, e.g. RIFFARCHY_MPV_ARGS=--ao=null for headless tests and CI machines without audio
         args += shlex.split(os.environ.get("RIFFARCHY_MPV_ARGS", ""))
+        # mpv's own log: the only way to see why it failed to start (it has no console in a GUI app)
+        self.log_path = Path(tempfile.gettempdir()) / f"riffarchy-mpv-{os.getpid()}.log"
+        args.append(f"--log-file={self.log_path}")
         quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         self._job = None
         if IS_WINDOWS:
@@ -161,10 +166,18 @@ class Mpv:
                 return _PipeTransport(path)
             except OSError:
                 if self.proc.poll() is not None:
-                    raise RuntimeError("mpv exited during startup") from None
+                    raise RuntimeError(f"mpv exited during startup (code {self.proc.returncode}):\n"
+                                       + self.log_tail()) from None
                 time.sleep(0.05)
         self.proc.kill()
         raise RuntimeError("could not connect to mpv")
+
+    def log_tail(self, lines=12):
+        try:
+            text = self.log_path.read_text(errors="replace").strip().splitlines()
+        except OSError:
+            return "(no mpv log)"
+        return "\n".join(text[-lines:]) or "(mpv log is empty)"
 
     def command(self, *args):
         msg = (json.dumps({"command": list(args)}) + "\n").encode()
@@ -199,3 +212,4 @@ class Mpv:
         except subprocess.TimeoutExpired:
             self.proc.kill()
         self.transport.close()
+        self.log_path.unlink(missing_ok=True)
