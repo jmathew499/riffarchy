@@ -65,11 +65,13 @@ jobs:
         run: python packaging/build.py
 
       - name: Self-test the packaged app
+        timeout-minutes: 10
         run: |
           if [ "$RUNNER_OS" = macOS ]; then APP=dist/Riffarchy.app/Contents/MacOS/Riffarchy
           else APP=dist/Riffarchy/Riffarchy.exe; fi
           status=0; "$APP" --selftest selftest || status=$?
-          cat selftest/report.json || echo "no report written"
+          echo "--- selftest.log"; cat selftest/selftest.log || echo "no log written"
+          echo "--- report.json"; cat selftest/report.json || echo "no report written"
           exit $status
 
       - name: Upload app

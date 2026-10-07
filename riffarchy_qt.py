@@ -1776,6 +1776,7 @@ def selftest(out_dir):
     Writes report.json and window.png to ``out_dir``; exit code 0 only if every check passed.
     """
     import array
+    import faulthandler
     import json
     import tempfile
     import time
@@ -1783,6 +1784,14 @@ def selftest(out_dir):
     os.environ.setdefault("RIFFARCHY_MPV_ARGS", "--ao=null")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Progress goes to a log as it happens (a windowed app has no console), and a watchdog dumps every
+    # thread's stack there and exits if the test hangs, so a stuck run still explains itself.
+    log = open(out_dir / "selftest.log", "w", buffering=1, encoding="utf-8")  # noqa: SIM115
+    faulthandler.enable(file=log)
+    faulthandler.dump_traceback_later(120, exit=True, file=log)
+
+    def note(msg):
+        log.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
     tmp = Path(tempfile.mkdtemp(prefix="riffarchy-selftest-"))
     report = {"version": VERSION, "platform": sys.platform, "frozen": bool(getattr(sys, "frozen", False)),
               "tools": {t: paths.find_tool(t) for t in ("mpv", "ffmpeg", "ffprobe", "yt-dlp", "qjs")},
@@ -1791,7 +1800,9 @@ def selftest(out_dir):
 
     def check(name, ok, detail=""):
         report["checks"][name] = {"ok": bool(ok), "detail": str(detail)}
-        print(("PASS " if ok else "FAIL ") + name + (f"  ({detail})" if detail else ""), flush=True)
+        line = ("PASS " if ok else "FAIL ") + name + (f"  ({detail})" if detail else "")
+        note(line)
+        print(line, flush=True)
 
     def run(*cmd, **kw):
         return subprocess.run(cmd, capture_output=True, text=True, timeout=120, **paths.POPEN_KW, **kw)
@@ -1802,6 +1813,7 @@ def selftest(out_dir):
         a = array.array("h", raw)[4800:-4800]
         return sum(1 for i in range(1, len(a)) if (a[i - 1] < 0) != (a[i] < 0)) / 2 / max(1e-9, len(a) / 48000)
 
+    note(f"selftest {VERSION} on {sys.platform}, frozen={report['frozen']}, tools={report['tools']}")
     app = QApplication([sys.argv[0]])
     theme.apply(app)
     check("tools present", not paths.missing_tools(), paths.missing_tools() or "all found")
@@ -1815,8 +1827,11 @@ def selftest(out_dir):
     tone = tmp / "tone.wav"
     run(paths.find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i",
         "sine=frequency=440:duration=20:sample_rate=48000", "-ac", "2", str(tone))
+    note(f"tone written: {tone.exists()}")
     lib = Library(data_dir=tmp / "data", music_dir=tmp / "music")
+    note("starting main window (spawns mpv)")
     win = MainWindow(app, lib)
+    note(f"main window up, mpv pid {win.s.mpv.proc.pid}")
     win.resize(1280, 820)
     win.show()
     win.add_files([str(tone)])
@@ -1824,15 +1839,21 @@ def selftest(out_dir):
     state = {"t0": time.monotonic(), "phase": "load"}
 
     def finish():
+        note("finishing")
         report["ok"] = all(c["ok"] for c in report["checks"].values())
         win.grab().save(str(out_dir / "window.png"))
         (out_dir / "report.json").write_text(json.dumps(report, indent=2))
+        note("report written; closing (stops mpv)")
         win.close()
+        note("closed")
+        faulthandler.cancel_dump_traceback_later()
         app.exit(0 if report["ok"] else 1)
 
     def tick():
         elapsed = time.monotonic() - state["t0"]
         if state["phase"] == "load":
+            if int(elapsed * 10) % 20 == 0:
+                note(f"waiting for song: song={bool(s.song)} peaks={s.peaks is not None} dur={s.duration}")
             if s.song and s.peaks:
                 check("song loads with waveform", True, f"{s.duration:.1f}s, {len(s.peaks)} peaks")
                 s.set_loop(2.0, 3.0, on=True)
