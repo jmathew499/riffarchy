@@ -1902,7 +1902,10 @@ def selftest(out_dir):
 def main():
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        # Headless Linux needs Qt's offscreen platform; on Windows/macOS use the real one (offscreen there
+        # can't see system fonts and draws every glyph as a box), so the screenshot shows the true UI.
+        if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         return selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest-report")
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
