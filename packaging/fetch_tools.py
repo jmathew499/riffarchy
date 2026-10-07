@@ -48,6 +48,10 @@ TOOLS = {
     "windows": [
         {"url": MPV_WIN_URLS[0], "mirrors": MPV_WIN_URLS[1:], "unpack": "mpv-windows-7z",
          "sha256": "0703a0d62c60b2c68511c6a101db82a31c32c69bcdd86941632a1e76bb1699b7"},
+        # mpv.exe imports vulkan-1.dll. GPU drivers usually install it, but not always (VMs, CI,
+        # some PCs), so ship the Khronos loader that mpv's official Windows build bundles.
+        {"url": f"{MPV}/mpv-v0.41.0-x86_64-pc-windows-msvc.zip", "unpack": "vulkan-loader",
+         "sha256": "4e197f729f5071c6772f35fffd96e0f36e3e8a044bd9479b136bb09b7c6a80ff"},
         {"url": f"{FFMPEG}/ffmpeg-win32-x64", "dest": "ffmpeg.exe", "sha256": "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00"},
         {"url": f"{FFMPEG}/ffprobe-win32-x64", "dest": "ffprobe.exe", "sha256": "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4"},
         {"url": f"{YTDLP}/yt-dlp.exe", "dest": "yt-dlp.exe", "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a"},
@@ -122,6 +126,8 @@ def unpack(kind, data, bin_dir):
             for f in out.iterdir():
                 if f.is_file() and f.suffix.lower() in (".exe", ".com", ".dll"):
                     shutil.copy2(f, bin_dir / f.name)
+    elif kind == "vulkan-loader":
+        (bin_dir / "vulkan-1.dll").write_bytes(zipfile.ZipFile(io.BytesIO(data)).read("vulkan-1.dll"))
     else:
         raise ValueError(kind)
 
