@@ -1792,6 +1792,11 @@ def selftest(out_dir):
 
     def note(msg):
         log.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+
+    # Windows consoles may use a legacy code page without "→": never let console output break the test
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     tmp = Path(tempfile.mkdtemp(prefix="riffarchy-selftest-"))
     report = {"version": VERSION, "platform": sys.platform, "frozen": bool(getattr(sys, "frozen", False)),
               "tools": {t: paths.find_tool(t) for t in ("mpv", "ffmpeg", "ffprobe", "yt-dlp", "qjs")},
@@ -1802,7 +1807,10 @@ def selftest(out_dir):
         report["checks"][name] = {"ok": bool(ok), "detail": str(detail)}
         line = ("PASS " if ok else "FAIL ") + name + (f"  ({detail})" if detail else "")
         note(line)
-        print(line, flush=True)
+        try:
+            print(line, flush=True)
+        except (OSError, UnicodeError, AttributeError):  # no usable console (windowed app)
+            pass
 
     def run(*cmd, **kw):
         return subprocess.run(cmd, capture_output=True, text=True, timeout=120, **paths.POPEN_KW, **kw)
@@ -1850,6 +1858,15 @@ def selftest(out_dir):
         app.exit(0 if report["ok"] else 1)
 
     def tick():
+        try:
+            step()
+        except Exception as e:  # noqa: BLE001 — a bug here must end the run with a FAIL, not stall it
+            import traceback
+            check(f"self-test crashed in phase {state['phase']!r}", False, f"{type(e).__name__}: {e}")
+            note(traceback.format_exc())
+            finish()
+
+    def step():
         elapsed = time.monotonic() - state["t0"]
         if state["phase"] == "load":
             if int(elapsed * 10) % 20 == 0:
