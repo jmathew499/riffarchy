@@ -27,7 +27,7 @@ NAME = "Riffarchy"
 DIST, WORK = ROOT / "dist", ROOT / "build"
 BIN = ROOT / "bin"
 PLATFORM = {"darwin": "macos-arm64", "win32": "windows-x64"}.get(sys.platform, "linux-x64")
-VERSION = os.environ.get("RIFFARCHY_VERSION", VERSION).lstrip("v")
+VERSION = (os.environ.get("RIFFARCHY_VERSION") or VERSION).lstrip("v")  # CI sets it to "" off tags
 
 
 def sh(*cmd, **kw):
