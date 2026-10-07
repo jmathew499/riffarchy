@@ -103,18 +103,23 @@ def unpack(kind, data, bin_dir):
         with tarfile.open(fileobj=io.BytesIO(inner)) as tar:
             tar.extractall(bin_dir, filter="tar")
     elif kind == "mpv-windows-7z":  # just mpv.exe and the DLL it loads from the top of the archive
-        with tempfile.TemporaryDirectory() as tmp:
-            archive = Path(tmp) / "mpv.7z"
+        # The archive uses the BCJ2 filter, which py7zr can't decode: use 7-Zip, or libarchive's bsdtar
+        # (built into Windows as System32\\tar.exe — not Git Bash's GNU tar, which can't read .7z).
+        seven = shutil.which("7z") or next((str(p) for p in (Path(os.environ.get("ProgramFiles", "")) /
+                                                             "7-Zip" / "7z.exe",) if p.is_file()), None)
+        win_tar = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / "tar.exe"
+        bsdtar = shutil.which("bsdtar") or (str(win_tar) if win_tar.is_file() else None)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            archive, out = Path(tmp) / "mpv.7z", Path(tmp) / "x"
             archive.write_bytes(data)
-            try:
-                import py7zr  # CI: pip install py7zr
-                with py7zr.SevenZipFile(archive) as z:
-                    z.extractall(Path(tmp) / "x")
-            except ImportError:  # locally: libarchive's bsdtar (Windows ships it as tar.exe) reads .7z
-                tar = shutil.which("bsdtar") or shutil.which("tar")
-                (Path(tmp) / "x").mkdir()
-                subprocess.run([tar, "-xf", str(archive), "-C", str(Path(tmp) / "x")], check=True)
-            for f in (Path(tmp) / "x").iterdir():
+            out.mkdir()
+            if seven:
+                subprocess.run([seven, "x", "-y", f"-o{out}", str(archive)], check=True, stdout=subprocess.DEVNULL)
+            elif bsdtar:
+                subprocess.run([bsdtar, "-xf", str(archive), "-C", str(out)], check=True)
+            else:
+                raise SystemExit("need 7-Zip or bsdtar to unpack the Windows mpv build")
+            for f in out.iterdir():
                 if f.is_file() and f.suffix.lower() in (".exe", ".dll"):
                     shutil.copy2(f, bin_dir / f.name)
     else:
