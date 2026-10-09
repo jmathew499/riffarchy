@@ -23,7 +23,7 @@ from .util import (AUDIO_EXTS, PEAK_RATE, SPEED_MAX, SPEED_MIN, SPEED_PRESETS, V
 from .waveview import WaveView
 
 APP_NAME = "Riffarchy"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 __all__ = [
     "APP_NAME", "VERSION", "Library", "Session", "Downloader", "WaveView",

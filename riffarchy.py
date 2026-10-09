@@ -23,7 +23,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pang
 
 from riffcore import (APP_NAME, SPEED_MAX, SPEED_MIN, SPEED_PRESETS, VERSION, VOLUME_MAX,  # noqa: E402
                       Downloader, Library, Session, WaveView, fmt_time, run_async, song_subtitle)
-from riffcore import media, paths, youtube  # noqa: E402
+from riffcore import media, paths, status, youtube  # noqa: E402
 from riffcore.theme import OMARCHY_STATE as THEME_STATE, read_palette, wave_colors  # noqa: E402
 
 APP_ID = "app.riffarchy.Riffarchy"
@@ -436,6 +436,7 @@ class RiffWindow(Adw.ApplicationWindow):
         last = self.lib.get(self.lib.data.get("last"))
         if last:
             self.s.load(last)
+        status.publish(self.s)  # for the Omarchy bar widget
         self.connect("close-request", self._on_close)
         # keep keyboard focus off the filter entry so Space/arrows drive playback
         self.connect("map", lambda *_: GLib.idle_add(lambda: self.play_btn.grab_focus() and False))
@@ -740,6 +741,8 @@ class RiffWindow(Adw.ApplicationWindow):
     # ── session → UI ──
     def _on_session(self, what):
         s = self.s
+        if what in ("song", "playing", "speed", "pitch", "loop"):
+            status.publish(s)  # what the Omarchy bar widget shows
         if what == "song":
             self._song_changed()
         elif what == "peaks":
@@ -1193,6 +1196,7 @@ class RiffWindow(Adw.ApplicationWindow):
     def _on_close(self, *_):
         self.flush_save()
         self.s.close()
+        status.clear()
         return False
 
 
@@ -1231,6 +1235,17 @@ class RiffApp(Adw.Application):
         quit_.connect("activate", lambda *_: self.props.active_window and self.props.active_window.close())
         self.add_action(quit_)
         self.set_accels_for_action("app.quit", ["<Control>q"])
+        # Remote control for the Omarchy bar widget (and anyone else), e.g.
+        #   gapplication action app.riffarchy.Riffarchy toggle-play
+        for name, method in (("toggle-play", "toggle_play"), ("toggle-loop", "toggle_loop")):
+            act = Gio.SimpleAction.new(name, None)
+            act.connect("activate", lambda *_a, m=method: self._remote(m))
+            self.add_action(act)
+
+    def _remote(self, method):
+        win = self.props.active_window
+        if isinstance(win, RiffWindow) and win.song:
+            getattr(win.s, method)()
 
     def _theme_changed(self, *_):
         if self._theme_src:

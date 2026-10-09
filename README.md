@@ -13,6 +13,32 @@ or run:
 
     yay -S riffarchy
 
+**As an Omarchy plugin** (from the [plugin marketplace](https://plugins.omarchy.org) or directly):
+
+    omarchy plugin add https://github.com/jmathew499/riffarchy
+    omarchy plugin enable io.github.jmathew499.riffarchy
+
+This installs the whole app and adds a ♪ button to your bar. **Right-click it once** to run setup. Setup
+installs any missing packages with pacman and offers to add Riffarchy to the app launcher (Super+Space).
+It asks before each step. After that:
+
+- **Left click:** open Riffarchy, or bring its window forward. It's the normal app window, not a popup.
+- **Middle click:** play / pause.
+- **Right click:** run setup again.
+- While a song is loaded the button shows its speed and a ⟳ when the loop is on, and turns your theme's
+  highlight colour while playing. To show only the icon, change *Show* in the widget's bar settings.
+
+**To remove the plugin:**
+
+    ~/.config/omarchy/plugins/io.github.jmathew499.riffarchy/omarchy/setup.sh --remove   # launcher entry, if added
+    omarchy plugin remove io.github.jmathew499.riffarchy
+
+Your library (`~/.local/share/riffarchy`) and downloads (`~/Music/Riffarchy`) are kept. Delete them too
+if you want everything gone.
+
+**Dependencies** (setup installs any that are missing): `python-gobject`, `python-cairo`, `gtk4`,
+`libadwaita` ≥ 1.8, `mpv`, `ffmpeg`, `yt-dlp`, `deno`. Optional: `mpv-mpris` for media keys.
+
 **From source**:
 
     git clone https://github.com/jmathew499/riffarchy.git && cd riffarchy
@@ -73,6 +99,7 @@ Downloads: `~/Music/Riffarchy`. Built on mpv (JSON IPC) + GTK4/libadwaita, so th
 ```
 riffarchy.py     GTK4/libadwaita front end + Omarchy theming (the only GTK code)
 riffarchy_qt.py  Qt (PySide6) front end for macOS/Windows (and Linux); icons drawn in code
+omarchy/         Omarchy plugin: bar widget (QML) + consent-based setup.sh; manifest.json is at the root
 riffcore/        UI-independent core, shared by every front end (no GTK or Qt imports)
   session.py     Session: playback, A–B loop, Set at Playhead, trainer, volume, sections
                  Downloader: background YouTube downloads into the library
@@ -82,6 +109,7 @@ riffcore/        UI-independent core, shared by every front end (no GTK or Qt im
                  named pipe + kill-on-close job on Windows
   media.py       waveform peaks, ffprobe metadata, file scanning, export (rendered by mpv + rubberband)
   theme.py       Omarchy palette reader and waveform colours
+  status.py      "now playing" status file the Omarchy bar widget reads (Linux)
   youtube.py     yt-dlp search and download
   paths.py       per-OS data/music dirs; finds bundled or PATH copies of mpv/ffmpeg/yt-dlp
 ```

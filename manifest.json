@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jmathew499.riffarchy",
+  "name": "Riffarchy",
+  "version": "1.1.0",
+  "author": "Joson Mathew",
+  "license": "MIT",
+  "description": "Practice player for musicians: slow songs down without changing pitch, transpose, loop exact phrases, and pull audio straight from YouTube. Installs the Riffarchy app and adds a bar button that opens it and shows what's playing.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "omarchy/RiffarchyWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Riffarchy",
+    "description": "Opens Riffarchy and shows the current song's speed and loop. Middle click plays/pauses; right click runs setup.",
+    "category": "Media",
+    "aliases": ["riffarchy", "practice", "riff"],
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "display": "Icon and status"
+    },
+    "schema": [
+      { "key": "display", "type": "enum", "label": "Show", "options": ["Icon and status", "Icon only"],
+        "defaultValue": "Icon and status", "description": "Show the playing song's speed and loop next to the icon." }
+    ]
+  }
+}
